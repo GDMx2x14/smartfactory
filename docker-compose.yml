@@ -1,0 +1,355 @@
+volumes:
+  metadata_data: {}
+  middle_var: {}
+  historical_var: {}
+  broker_var: {}
+  coordinator_var: {}
+  router_var: {}
+  druid_shared: {}
+  db: {}
+  minio_data: {}
+  kb: {}
+  db_backup: {}
+  druid_db_backup: {}
+  backrest_data: {}
+  backrest_config: {}
+  backrest_cache: {}
+  target_volume: {}
+  vault_data: {}
+  rag_models: {}
+
+services:
+  postgres:
+    container_name: postgres
+    image: postgres:latest
+    volumes:
+      - metadata_data:/var/lib/postgresql/data
+#   environment:
+#      POSTGRES_HOST_AUTH_METHOD: trust
+    env_file:
+      - database/environment
+    profiles:
+      - database
+      - not-db-init
+
+  zookeeper:
+    container_name: zookeeper
+    image: zookeeper:3.5.10
+    platform: linux/amd64
+    ports:
+      - "12181:2181"
+    environment:
+      - ZOO_MY_ID=1
+      #- ZOO_SERVERS=server.1=zookeeper:2888:3888 # Set only a single server
+    profiles:
+      - database
+      - not-db-init
+
+  coordinator:
+    image: apache/druid:31.0.0
+    container_name: coordinator
+    platform: linux/amd64
+    volumes:
+      - druid_shared:/opt/shared
+      - coordinator_var:/opt/druid/var
+      - ./database/druid/upload:/druid/upload
+    depends_on:
+      - zookeeper
+      - postgres
+    ports:
+      - "18081:8081"
+    command:
+      - coordinator
+    env_file:
+      - database/environment
+    profiles:
+      - database
+      - not-db-init
+
+  broker:
+    image: apache/druid:31.0.0
+    container_name: broker
+    platform: linux/amd64
+    volumes:
+      - broker_var:/opt/druid/var
+    depends_on:
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "18082:8082"
+    command:
+      - broker
+    env_file:
+      - database/environment
+    profiles:
+      - database
+      - not-db-init
+
+  historical:
+    image: apache/druid:31.0.0
+    container_name: historical
+    platform: linux/amd64
+    volumes:
+      - druid_shared:/opt/shared
+      - historical_var:/opt/druid/var
+    depends_on:
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "18083:8083"
+    command:
+      - historical
+    env_file:
+      - database/environment
+    profiles:
+      - database
+      - not-db-init
+
+  middlemanager:
+    image: apache/druid:31.0.0
+    container_name: middlemanager
+    platform: linux/amd64
+    volumes:
+      - druid_shared:/opt/shared
+      - middle_var:/opt/druid/var
+      - ./database/druid/upload:/druid/upload
+    depends_on:
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "18091:8091"
+      - "18100-18105:8100-8105"
+    command:
+      - middleManager
+    env_file:
+      - database/environment
+    profiles:
+      - database
+      - not-db-init
+
+  router:
+    image: apache/druid:31.0.0
+    container_name: router
+    platform: linux/amd64
+    volumes:
+      - router_var:/opt/druid/var
+    depends_on:
+      - zookeeper
+      - postgres
+      - coordinator
+    ports:
+      - "18888:8888"
+    command:
+      - router
+    env_file:
+      - database/environment
+    profiles:
+      - database
+      - not-db-init
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://router:8888/status/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  db:
+    container_name: db
+    env_file:
+      - database/.env
+    image: postgres:latest
+    ports:
+      - "15432:5432"
+#    environment:
+   #   POSTGRES_HOST_AUTH_METHOD: trust
+    volumes:
+      - db:/var/lib/postgresql/data
+    profiles:
+      - database
+      - not-db-init
+
+  minio:
+    container_name: minio
+    image: quay.io/minio/minio:latest
+    volumes:
+      - minio_data:/data
+    ports:
+      - 19000:9000
+      - 19001:9001
+    env_file:
+      - database/.env
+    command: minio server /data
+    profiles:
+      - database
+      - not-db-init
+
+  db-init:
+    image: ghcr.io/belgio99/smartfactory/db-init:latest
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    env_file:
+      - database/.env
+    profiles:
+      - database
+    volumes:
+      - ./database/druid/upload:/druid/upload
+    depends_on:
+      router:
+        condition: service_healthy
+      
+
+  kb:
+    build:
+      context: ./kb
+      dockerfile: Dockerfile
+    image: ghcr.io/belgio99/smartfactory/kb:latest
+    volumes:
+      - kb:/KB/storage
+    platform: linux/amd64
+    ports: 
+      - "10010:8000"
+    profiles:
+      - kb
+      - not-db-init
+    env_file:
+      - database/.env
+    
+  data-processing:
+    build:
+      context: ./data-processing
+      dockerfile: Dockerfile
+    image: ghcr.io/belgio99/smartfactory/data-processing:latest
+    ports: 
+      - "10030:8000"
+    profiles:
+      - data-processing
+      - not-db-init
+    env_file:
+      - database/.env
+      - data-processing/.env
+    depends_on:
+      router:
+        condition: service_healthy
+
+  api:
+    image: ghcr.io/belgio99/smartfactory/api:latest
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    ports: 
+      - "10040:8000"
+    env_file:
+      - api/.env
+      - api/environment
+    depends_on:
+      - smtp
+      - router
+    profiles:
+      - api
+      - not-db-init
+
+  smtp:
+    image: mailhog/mailhog
+    platform: linux/amd64
+    ports:
+        - "11025:1025"
+        - "18025:8025"
+    environment:
+        MH_OUTGOING_SMTP_USERNAME: "noreply@smartfactory.com"
+        MH_OUTGOING_SMTP_PASSWORD: "SmartAppPassword123"
+    profiles:
+      - api
+      - not-db-init
+    
+  rag:
+    image: ghcr.io/belgio99/smartfactory/rag:latest
+    build:
+      context: ./rag
+      dockerfile: Dockerfile
+    env_file:
+      - rag/.env
+    volumes:
+      - kb:/docs/kb
+      - rag_models:/app/models
+    ports: 
+      - "10050:8000"
+    profiles:
+      - rag
+      - not-db-init
+
+  gui-panel:
+    image: ghcr.io/belgio99/smartfactory/gui-panel:latest
+    build:
+      context: ./gui-panel
+      dockerfile: Dockerfile
+    env_file:
+      - gui-panel/.env
+    ports: 
+      - "10060:8080"
+    profiles:
+      - gui-panel
+      - not-db-init
+
+  kpi-engine:
+    image: ghcr.io/belgio99/smartfactory/kpi-engine:latest
+    build:
+      context: ./kpi-engine
+      dockerfile: Dockerfile
+    ports: 
+      - "10080:8000"
+    profiles:
+      - kpi-engine
+      - not-db-init
+    env_file:
+      - kpi-engine/.env
+    depends_on:
+      router:
+        condition: service_healthy
+  backrest:
+    image: garethgeorge/backrest:latest
+    container_name: backrest
+    hostname: backrest
+    volumes:
+      - backrest_data:/data
+      - ./database/backrest/config:/config
+      - backrest_cache:/cache
+      - druid_shared:/userdata/druid_shared # [optional] mount local paths to backup here.
+      - db_backup:/userdata/db_backup 
+      - druid_db_backup:/userdata/druid_db_backup
+      - minio_data:/userdata/minio_data
+      - target_volume:/target_volume
+    #  - /MY-REPOS:/repos # [optional] mount repos if using local storage, not necessary for remotes e.g. B2, S3, etc.
+    environment:
+      - BACKREST_DATA=/data # path for backrest data. restic binary and the database are placed here.
+      - BACKREST_CONFIG=/config/config.json # path for the backrest config file.
+      - XDG_CACHE_HOME=/cache # path for the restic cache which greatly improves performance.
+      - TZ=Europe/Rome # set the timezone for the container, used as the timezone for cron jobs.
+    restart: unless-stopped
+    ports:
+      - 9898:9898
+    profiles:
+      - database
+      - not-db-init
+    env_file:
+      - database/backrest/.env
+     
+  vault: #it is in dev mode!
+    image: hashicorp/vault
+    container_name: vault
+    volumes:
+      - vault_data:/vault/file
+    environment:
+      VAULT_ADDR: "http://0.0.0.0:8200"
+      VAULT_STORAGE_BACKEND: "file"  
+    ports:
+      - "18200:8200"
+    profiles:
+      - database
+    logging:
+      driver: "json-file"
+      options:
+        max-file: "1"
+

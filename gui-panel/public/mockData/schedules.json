@@ -1,0 +1,34 @@
+[
+  {
+    "id": 1,
+    "name": "Quarterly Cost Report",
+    "recurrence": "Monthly",
+    "status": true,
+    "email": "mock@company.com",
+    "startDate": "2024-12-01",
+    "kpis": [
+      "energy_cost_per_unit",
+      "power_consumption_efficiency"
+    ],
+    "machines": [
+      "Machine 1",
+      "Machine 2"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "Annual Energy Consumption Report",
+    "recurrence": "Yearly",
+    "status": false,
+    "email": "mock@company.com",
+    "startDate": "2024-01-01",
+    "kpis": [
+      "consumption_sum",
+      "energy_cost_per_unit",
+      "power_consumption_efficiency"
+    ],
+    "machines": [
+      "Machine 3"
+    ]
+  }
+]

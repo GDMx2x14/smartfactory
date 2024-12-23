@@ -1,0 +1,92 @@
+{
+  "AssemblyMachine": {
+    "Assembly Machine 1": {
+      "description": "A machine designed to assemble components or subassemblies into complete products. Commonly used in automated production lines to increase speed and reduce manual errors",
+      "id": "Assembly Machine 1",
+      "type": "AssemblyMachine"
+    },
+    "Assembly Machine 2": {
+      "description": "A machine designed to assemble components or subassemblies into complete products. Commonly used in automated production lines to increase speed and reduce manual errors",
+      "id": "Assembly Machine 2",
+      "type": "AssemblyMachine"
+    },
+    "Assembly Machine 3": {
+      "description": "A machine designed to assemble components or subassemblies into complete products. Commonly used in automated production lines to increase speed and reduce manual errors",
+      "id": "Assembly Machine 3",
+      "type": "AssemblyMachine"
+    }
+  },
+  "CuttingMachine": {
+    "Laser Cutter": {
+      "description": "A machine that uses a high-powered laser beam to cut materials with high precision. Ideal for shaping metals, plastics, wood, and other materials with complex details or tight tolerances",
+      "id": "Laser Cutter",
+      "type": "CuttingMachine"
+    },
+    "Large Capacity Cutting Machine 1": {
+      "description": "A machine ideal for heavy-duty cutting tasks on materials like thick steel, aluminum, or titanium. These machines are designed for large-scale industrial jobs and high productivity.",
+      "id": "Large Capacity Cutting Machine 1",
+      "type": "CuttingMachine"
+    },
+    "Large Capacity Cutting Machine 2": {
+      "description": "A machine ideal for heavy-duty cutting tasks on materials like thick steel, aluminum, or titanium. These machines are designed for large-scale industrial jobs and high productivity.",
+      "id": "Large Capacity Cutting Machine 2",
+      "type": "CuttingMachine"
+    },
+    "Low Capacity Cutting Machine 1": {
+      "description": "Designed for light-duty operations, this machine is suitable for thin materials or applications requiring precision on a small scale. Commonly used for prototypes or small production batches.",
+      "id": "Low Capacity Cutting Machine 1",
+      "type": "CuttingMachine"
+    },
+    "Medium Capacity Cutting Machine 1": {
+      "description": "A versatile machine for medium-intensity cutting operations. It can handle thicker or denser materials, making it applicable across various industrial sectors.",
+      "id": "Medium Capacity Cutting Machine 1",
+      "type": "CuttingMachine"
+    },
+    "Medium Capacity Cutting Machine 2": {
+      "description": "A versatile machine for medium-intensity cutting operations. It can handle thicker or denser materials, making it applicable across various industrial sectors.",
+      "id": "Medium Capacity Cutting Machine 2",
+      "type": "CuttingMachine"
+    },
+    "Medium Capacity Cutting Machine 3": {
+      "description": "A versatile machine for medium-intensity cutting operations. It can handle thicker or denser materials, making it applicable across various industrial sectors.",
+      "id": "Medium Capacity Cutting Machine 3",
+      "type": "CuttingMachine"
+    }
+  },
+  "LaserWeldingMachine": {
+    "Laser Welding Machine 1": {
+      "description": "A machine that uses a laser beam to weld metallic components. It offers high precision and minimal heat-affected zones, making it ideal for delicate applications such as electronics and mechanical components.",
+      "id": "Laser Welding Machine 1",
+      "type": "LaserWeldingMachine"
+    },
+    "Laser Welding Machine 2": {
+      "description": "A machine that uses a laser beam to weld metallic components. It offers high precision and minimal heat-affected zones, making it ideal for delicate applications such as electronics and mechanical components.",
+      "id": "Laser Welding Machine 2",
+      "type": "LaserWeldingMachine"
+    }
+  },
+  "RivetingMachine": {
+    "Riveting Machine": {
+      "description": "A machine designed to join two or more components using rivets. Widely used in the aerospace, automotive, and metal structure construction industries.",
+      "id": "Riveting Machine",
+      "type": "RivetingMachine"
+    }
+  },
+  "TestingMachine": {
+    "Testing Machine 1": {
+      "description": "A machine used for testing components or final products. It can perform mechanical, electrical, or functional checks to ensure quality and compliance with design specifications.",
+      "id": "Testing Machine 1",
+      "type": "TestingMachine"
+    },
+    "Testing Machine 2": {
+      "description": "A machine used for testing components or final products. It can perform mechanical, electrical, or functional checks to ensure quality and compliance with design specifications.",
+      "id": "Testing Machine 2",
+      "type": "TestingMachine"
+    },
+    "Testing Machine 3": {
+      "description": "A machine used for testing components or final products. It can perform mechanical, electrical, or functional checks to ensure quality and compliance with design specifications.",
+      "id": "Testing Machine 3",
+      "type": "TestingMachine"
+    }
+  }
+}
