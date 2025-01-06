@@ -1,4 +1,5 @@
 pandas
+regex
 python-dotenv
 sympy
 requests

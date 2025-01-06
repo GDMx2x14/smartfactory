@@ -1,0 +1,55 @@
+USER QUERY: {_INPUT_}
+
+INSTRUCTIONS:
+TODAY is {_TODAY_}.
+Extract information from the USER QUERY based on the following rules and output it in the EXAMPLE OUTPUT specified format.
+All dates in the USER QUERY are in the format DD/MM/YYYY. When providing your OUTPUT, always convert all dates to the format YYYY-MM-DD. If a date range is given, maintain the range format (e.g., "01/12/2024 -> 10/12/2024" should become "2024-12-01 -> 2024-12-10").
+
+LIST_1 (list of machines): '{_MACHINES_}'
+LIST_2 (list of kpis): '{_KPIS_}'
+
+RULES:
+1. Match IDs:
+    -Look for any terms in the query that match IDs from LIST_1 or LIST_2.
+    -If a match contains a machine type without a specific number, return all machines of that type. Example: 'Testing Machine' -> ['Testing Machine 1', 'Testing Machine 2', 'Testing Machine 3'].
+    -When an IDs from LIST_2 is matched with a KPI on USER QUERY, if the kpi is paired with a related changing indicator such as a number or either a decrease or increase expressed through a number or a percentage, the id must be returned within the [matched changing LIST_2 IDs] otherwise within the [matched static LIST_2 IDs].
+    -If there is no kpi to be changed (no IDs from LIST_2 are associated as [matched static LIST_2 IDs]), return ['NULL'].
+    -If no IDs from LIST_2 are associated as [matched changing LIST_2 IDs], return ['NULL'].
+    -If no IDs from LIST_1 are associated with the matched machines, return ['NULL'] as [matched LIST_1 IDs].
+    -If 'all' IDs from LIST_2 are associated with the matched KPIs, return ['ALL'] as [matched LIST_2 IDs]. Example: 'all kpis for ...' -> ['ALL']
+    -If 'all' IDs from LIST_1 are associated with the matched machines, return ['ALL'] as [matched LIST_1 IDs]. Example: 'calculate for all machines ...' -> ['ALL']
+2. Determine Time Window:
+    -if there is a time window described by exact dates, use them, otherwise return the expression which individuates the time window: 'last/next X days/weeks/months' using the format <last/next, X, days/weeks/months>
+    -If no time window is specified, use NULL.
+    -if there is a reference to an exact month and a year, return the time windows starting from the first of that month and ending to the last day of that month.
+    -Yesterday must be returned as {_YESTERDAY_TW_}.
+    -Allow for minor spelling or formatting mistakes in the matched expressions and correct them as done in the examples below.
+3. Handle Errors:
+    -Allow for minor spelling or formatting mistakes in the input.
+    -If there is ambiguity matching a kpi, you can match USER QUERY with the one in LIST_2 which ends with '_sum'
+4. Output Format:
+    -For each unique combination of machine IDs and KPIs, return a tuple in this format: ([matched LIST_1 IDs], [matched changing LIST_2 IDs], [matched static LIST_2 IDs], time window), exact dates are in the format 'YYYY-MM-DD -> YYYY-MM-DD'.
+    -[matched changing LIST_2 IDs] is a list of matches id with LIST_2 where each id is paired with a related increasing or deacreasing indicator expressed through a percentage.
+    -[matched static LIST_2 IDs] is a list of matches id with LIST_2 where each element does not belong to [matched changing LIST_2 IDs]
+
+NOTES:
+-Ensure output matches the one of the EXAMPLES below exactly, I need only the OUTPUT section.
+
+EXAMPLES:
+'
+INPUT: What would be the quality for Laser Cutter for the last 5 days if the total good cycles were 30% higher? what would be for laser welding Machine 1 for the month of April the oee if all kpis increased their value of 110%.
+OUTPUT: (['Laser Cutter'], [<'good_cycles_sum', +30%>], ['quality'], <last, 5, days>), (['Laser Welding Machine 1'], ['ALL'], ['oee'], 2024-04-01 -> 2024-04-30)
+
+INPUT: If the the medium Capacity Cutting Machine 2's and Riveting machine's working time for last month had been 15% less, the idle time 50% higher and the consumprion idle 8% lower, what would the availability have been?
+OUTPUT: (['Medium Capacity Cutting Machine 2', 'Riveting Machine'], [<'working_time_sum', -15%>, <'idle_time_sum', +50%>, <'consumption_idle_sum', -8%>], ['availability'], <last, 1, months>)
+
+INPUT: What if the consumption_working_sum for assembly machine had been 70% higher last 3 weeks?
+OUTPUT: (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], [<'consumption_working_sum', +70%>], ['NULL'], <last, 3, weeks>)
+
+INPUT: How would all related kpis changes from 10/10/2024 to 14/10/2024 if the idle time had been 25% lower? What would be the quality for Laser Cutter for the last 5 days if the total good cycles were different?
+OUTPUT:  (['NULL'], [<'idle_time_sum', -25%>], ['ALL'], 2024-10-10 -> 2024-10-14), (['Laser Cutter'], ['NULL'], ['quality'], <last, 5, days>)
+
+INPUT: How would throughput and operative time change yestarday if all machines had decreased the total amount of cycles by 60%.
+OUTPUT: (['ALL'], [<'cycles_sum', -60%>], ['throughput', 'operative time'], {_YESTERDAY_TW_})
+'
+

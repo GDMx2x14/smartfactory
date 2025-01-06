@@ -1,0 +1,50 @@
+USER QUERY: {_INPUT_}
+
+INSTRUCTIONS:
+TODAY is {_TODAY_}.
+Extract information from the USER QUERY based on the following rules and output it in the EXAMPLE OUTPUT specified format.
+All dates in the USER QUERY are in the format DD/MM/YYYY. When providing your OUTPUT, always convert all dates to the format YYYY-MM-DD. If a date range is given, maintain the range format (e.g., "01/12/2024 -> 10/12/2024" should become "2024-12-01 -> 2024-12-10").
+
+LIST_1 (list of machines): '{_MACHINES_}'
+LIST_2 (list of kpis): '{_KPIS_}'
+
+RULES:
+1. Match IDs:
+    -Look for any terms in the query that match IDs from LIST_1 or LIST_2.
+    -If a match contains a machine type without a specific number, return all machines of that type. Example: 'Testing Machine' -> ['Testing Machine 1', 'Testing Machine 2', 'Testing Machine 3'].
+    -If no IDs from LIST_2 are associated with the matched KPIs, return ['NULL'] as [matched LIST_2 IDs].
+    -If no IDs from LIST_1 are associated with the matched machines, return ['NULL'] as [matched LIST_1 IDs].
+    -If 'all' IDs from LIST_2 are associated with the matched KPIs, return ['ALL'] as [matched LIST_2 IDs]. Example: 'predict all kpis for ...' -> ['ALL']
+    -If 'all' IDs from LIST_1 are associated with the matched machines, return ['ALL'] as [matched LIST_1 IDs]. Example: 'calculate for all machines ...' -> ['ALL']
+2. Determine Time Window:
+    -if there is a time window described by exact dates, use them, otherwise return the expression which individuates the time window: 'last/next X days/weeks/months' using the format <last/next, X, days/weeks/months>
+    -If no time window is specified, use NULL.
+    -if there is a reference to an exact month and a year, return the time windows starting from the first of that month and ending to the last day of that month.
+    -Yesterday must be returned as {_YESTERDAY_TW_}, today as {_TODAY_TW_} and tomorrow as {_TOMORROW_TW_}.
+    -Allow for minor spelling or formatting mistakes in the matched expressions and correct them as done in the examples below.
+3. Handle Errors:
+    -Allow for minor spelling or formatting mistakes in the input.
+    -If there is ambiguity matching a kpi, you can match USER QUERY with the one in LIST_2 which ends with '_avg'
+4. Output Format:
+    -For each unique combination of machine IDs and KPIs, return a tuple in this format: ([matched LIST_1 IDs], [matched LIST_2 IDs], time window), exact dates are in the format 'YYYY-MM-DD -> YYYY-MM-DD'.
+    
+NOTES:
+-Ensure output matches the one of the EXAMPLES below exactly, I need only the OUTPUT section.
+
+EXAMPLES:
+'
+INPUT: Calculate the kpi cost_idle arg and cost idle std for the assembly machine 1 and Low capacity cutting machine for the past 5 day, calculate offlinetime med for Assembly machine 3 for the last two months and cost_idle_avg for Assembly machine. How much do the Assembly machine 2 has worked the last three days? Can you calculate all kpis for 20/11/2024 -> 18/11/2024 for Low Capacity Cutting Machine 1?
+OUTPUT: (['Assembly Machine 1', 'Low Capacity Cutting Machine 1'], ['cost_idle_avg', 'cost_idle_std'], <last, 5, days>), (['Assembly Machine 3'], ['offline_time_med'], <last, 2, months>), (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['cost_idle_avg'], NULL), (['Assembly Machine 2'], ['working_time_sum'], <last, 3, days>), (['Low Capacity Cutting Machine 1'], ['ALL'], 2024-11-20 -> 2024-11-18)
+
+INPUT: Calculate using data from the last 2 weeks the standard deviation for cost_idle of Low capacity cutting machine 1 and Assemby Machine 2. Calculate for the same machines also the offline time median using data from the past month. Calculate the highest offline time for low capacity cutting machine 1?
+OUTPUT: (['Low Capacity Cutting Machine 1', 'Assembly Machine 2'], ['cost_idle_std'], <last, 2, weeks>), (['Low Capacity Cutting Machine 1', 'Assembly Machine 2'], ['offline_time_med'], <last, 1, months>), (['Low Capacity Cutting Machine 1'], ['offline_time_max'], NULL)
+
+INPUT: Calculate the offline time median about laste 3 weeks. Can you calculate the working time for Assembly machine 1 based on yesterday data, the same kpi dor Assembly machine 2 based on data from 03/05/2024 -> 07/06/2024. What is the day riveting machine 1 had the lowest working time last 2 months.
+OUTPUT: (['NULL'], ['offline_time_med'], <last, 3, weeks>), (['Assembly Machine 1'], ['working_time_avg'], {_YESTERDAY_TW_}), (['Assembly Machine 2'], ['working_time_avg'], 2024-05-03 -> 2024-06-07), (['Riveting Machine'], ['working_time_min'], <last, 2, months>)
+
+INPUT: Predict working time min and the average for Assembly machine for {_TW1_} and the same kpis for all machines. What will be the the total amount of working time for low capacity cutting machine 1 and assembly machine 1 for next 5 weeks.
+OUTPUT: (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['working_time_min','working_time_avg'], {_TW2_}), (['ALL'], ['working_time_min','working_time_avg'], NULL), (['Low Capacity Cutting Machine 1', 'Assembly Machine 1'], ['working_time_sum'], <next, 5, weeks>)
+
+INPUT: Can you predict for next 2 days for Riveting machine 1? predict for all the assembly machine the cost idle average and the sum of working time for the next 3 weeks and for low capacity cutting machne the cost_idle_std for March 2025. predict also for Assembly machine 1 the cost_idle for the next two days.
+OUTPUT: (['Riveting Machine'], ['NULL'], <next, 2, days>), (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['cost_idle_avg', 'working_time_sum'], <next, 3, weeks>), (['Low Capacity Cutting Machine 1'], ['cost_idle_std'], 2025-03-01 -> 2025-03-31), (['Assembly Machine 1'], ['cost_idle_avg'], <next, 2, days>)
+'

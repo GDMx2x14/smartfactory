@@ -5,6 +5,7 @@ from itertools import product
 from dotenv import load_dotenv
 from rdflib import Graph
 from datetime import datetime, timedelta
+import regex as re
 
 # Load environment variables
 load_dotenv()
@@ -32,8 +33,14 @@ class QueryGenerator:
         _json_parser(data, label): Converts processed data into a JSON-formatted structure.
         query_generation(input, label): Generates a query based on user input and predefined rules.
     """
-    ERROR_NO_KPIS = 2
-    ERROR_ALL_KPIS = 1
+    ERROR_NO_MACHINES = "Error: You can't do this type of request without including any machine, try again with at least one machine."
+    ERROR_ALL_MACHINES = "Error: You can't do this type of request asking for all machines, try again with less machines."
+    ERROR_NO_KPIS = "Error: You can't calculate/predict for no kpis, try again with at least one kpi."
+    ERROR_ALL_KPIS = "Error: You can't calculate/predict for all kpis, try again with less kpis."
+    ERROR_INVALID_DATE= "Error: Invalid request date format."
+    ERROR_NO_CHANGES = "Error: At least one of the user input requests does not contain any valid kpi to be changed."
+    ERROR_ALL_CHANGES = "Error: At least one of the user input requests asks for all kpis to be changed, try again with less kpis."
+    PROMPTS_PATH = os.path.dirname(os.path.abspath(__file__))+"/prompts/"
 
     def __init__(self, llm):
         """
@@ -43,6 +50,9 @@ class QueryGenerator:
             llm (object): Language model instance for processing user inputs.
         """
         self.llm=llm
+        self.calc_pred_prompt=open(self.PROMPTS_PATH+"kpi_calc_pred.txt").read().strip()
+        self.report_prompt =open(self.PROMPTS_PATH+"report.txt").read().strip()
+        self.what_if_prompt =open(self.PROMPTS_PATH+"what_if.txt").read().strip()
 
     def _string_to_array(self,string ,type):
         """
@@ -66,6 +76,8 @@ class QueryGenerator:
             x=x.strip("'")
             if (type == "machines" and (x in self.machine_res)) or (type == "kpis" and (x in self.kpi_res)) or x == "ALL" or x == "NULL":
                 array.append(x)
+        if len(array) == 0:
+            return ['NULL']
         return array
     
     def _check_absolute_time_window(self, dates, label):
@@ -102,6 +114,20 @@ class QueryGenerator:
         return False
 
             
+    def _search_not_atomics(self, kpis):
+        # query the KB for each non atomic kpis whose atomic formula contains at least one kpi from 'kpis'
+        not_atomics = []
+        for key in self.not_atomic_kpis:
+            formula = self.not_atomic_kpis[key]
+            #to look for kpi in formula regex can be used
+            for kpi in kpis:
+                regex = r"\b"+re.escape(kpi)+r"\b"
+                if re.search(regex, formula) != None:
+                    not_atomics.append(key)
+                    break
+        return not_atomics
+
+
     def _kb_update(self):
         """
         Updates the queryGen instance variables by checkin the current day and querying KB for available machines and KPIs.
@@ -118,10 +144,11 @@ class QueryGenerator:
         self.TODAY = datetime(year= 2024,month=10,day=19)
         kpi_query= """
         PREFIX ontology: <http://www.semanticweb.org/raffi/ontologies/2024/10/sa-ontology#>
-        SELECT ?id WHERE {
+        SELECT ?id ?formula WHERE {
         ?kpi rdf:type ?type.
         FILTER (?type IN (ontology:ProductionKPI_Production, ontology:EnergyKPI_Consumption, ontology:EnergyKPI_Cost, ontology:MachineUsageKPI, ontology:ProductionKPI_Quality, ontology:CustomKPItmp)).
         ?kpi ontology:id ?id .
+        ?kpi ontology:atomic_formula ?formula.
         }
         """
         machine_query="""
@@ -136,8 +163,12 @@ class QueryGenerator:
         graph.parse(os.environ['KB_FILE_PATH'] + os.environ['KB_FILE_NAME'], format="xml")
         res = graph.query(kpi_query)
         self.kpi_res = []
+        self.not_atomic_kpis = {}
         for row in res:
             self.kpi_res.append(str(row["id"]))
+            formula=str(row["formula"])
+            if formula != "-":
+                self.not_atomic_kpis[str(row["id"])] = formula
         res = graph.query(machine_query)
         self.machine_res = []
         for row in res:
@@ -243,7 +274,7 @@ class QueryGenerator:
         Returns:
             tuple or str: A valid time window or "INVALID DATE" if parsing fails.
         """
-        if date == "NULL": 
+        if "NULL" in date: 
             # date not provided from the user => default action
             if label == "kpi_calc":
                 return self._last_next_days(self.TODAY,"last",30)
@@ -285,10 +316,10 @@ class QueryGenerator:
             data (str): LLM output in the format: OUTPUT: (query1), (query2), (query3)
             label (str): The user input classification label, either "kpi_calc" or "predictions".
         Returns:
-            tuple: A JSON-compatible dictionary and an error code (if applicable).
+            tuple: A JSON-compatible dictionary and an error message (if applicable).
         """
         json_out= []
-        all_kpis = 0
+        error = []
         data = data.replace("OUTPUT: ","")
         data= data.strip("()").split("), (")
         # for each elem in data, a dictionary (json obj) is created
@@ -301,15 +332,16 @@ class QueryGenerator:
             # a request is invalid if it misses the kpi field or if the user query mentions 'all' kpis to be calculate/predicted
             # return also an error log expressing the user inability to make a request asking for all kpis (or none)
             if kpis == ["ALL"]:
-                all_kpis = self.ERROR_ALL_KPIS
+                error.append(self.ERROR_ALL_KPIS)
                 continue
             if kpis == ["NULL"]:
-                all_kpis= self.ERROR_NO_KPIS
+                error.append(self.ERROR_NO_KPIS)
                 continue
             date = self._date_parser(elem[2],label)
             # if there is no valid time window, the related json obj is not built
             if date == "INVALID DATE":
                 print("INVALID DATE")
+                error.append(self.ERROR_INVALID_DATE)
                 continue
             # kpi-engine get a time window with variable starting point while predictor starts always from the day next to the current one
             if label == "kpi_calc":
@@ -342,7 +374,89 @@ class QueryGenerator:
         if label == "predictions" :
             json_out={"value":json_out}
   
-        return json_out,all_kpis
+        return json_out, error
+    
+    def _whatif_json_parser(self, data):
+        json_out= []
+        error = []
+        data = data.replace("OUTPUT: ","")
+        data= data.strip("()").split("), (")
+        # for each elem in data, a dictionary (json obj) is created
+        for elem in data:
+            obj={}
+            # it is necessary to include ']' to the split because otherwise it would also be included in the strings of the generated array
+            elem = elem.split("], ")
+            change_kpis= elem[1]
+            # out of change_kpis we need to create an array of kpis and an array of changes (expressed as percentages)
+            # a what_if request to kpi engine is invalid if the user input does not contain kpi to be changed or requests for all, to be changed
+            if ("NULL" in change_kpis):
+                error.append(self.ERROR_NO_CHANGES)
+                continue
+            if  ("ALL" in change_kpis):
+                error.append(self.ERROR_ALL_CHANGES)
+            temp_change_kpis=change_kpis.strip("[").split(">, ")
+            changes = []
+            change_kpis = []
+            for _elem in temp_change_kpis:
+                _elem=_elem.strip("<>").split(", ")
+                _elem[0]=_elem[0].strip("'")
+                # check for the existence of the kpi _elem[0] in KB and for the correct percentage change format(+/-(NUMBERS)%) for _elem[1]
+                regex=r"([+-])([0-9]+)(\.[0-9]+)?%"
+                if _elem[0] in self.kpi_res and (re.search(regex,_elem[1]) != None):
+                    change_kpis.append(_elem[0])
+                    changes.append(_elem[1])
+            # a what_if request to kpi engine is invalid if it misses the what_if_kpi field.
+            if len(changes) == 0:
+                error.append(self.ERROR_NO_CHANGES)
+                continue
+            obj["What_If_Change"]=changes
+            obj["What_If_KPI"] = change_kpis
+            kpis= elem[2]+"]"
+            kpis = self._string_to_array(kpis,"kpis")
+            # kpis == ["NULL"] or kpis == ["ALL"] -> kpis has to be filled with all kpis which contain at least one kpi of change_kpis
+            if kpis == ["NULL"] or kpis == ["ALL"]:
+                kpis=self._search_not_atomics(change_kpis)
+            else:
+                #check if there are kpis in 'kpis' whose atomic formula do not contain any kpi in 'change_kpis'
+                temp= []
+                for kpi in kpis:
+                    if kpi in self.not_atomic_kpis:
+                        formula = self.not_atomic_kpis[kpi]
+                        for change_kpi in change_kpis:  
+                            regex = r"\b"+re.escape(change_kpi)+r"\b"            
+                            if re.search(regex, formula) != None:
+                                temp.append(kpi)
+                                break
+                kpis=temp
+            # date parsing is the same use cases as kpi_calc
+            date = self._date_parser(elem[3], "kpi_calc")
+            # if there is no valid time window, the related json obj is not built
+            if date == "INVALID DATE":
+                print("INVALID DATE")
+                error.append(self.ERROR_INVALID_DATE)
+                continue
+            obj["Date_Start"] = date[0]
+            obj["Date_Finish"] = date[1]
+            machines=elem[0]+"]"
+            machines = self._string_to_array(machines,"machines")
+            # a what_if request to kpi engine is invalid if the user input does not contain machine names or it request for all of them
+            # (machines != ["NULL"/"ALL"]) => complete json generation (standard behaviour)
+            if  machines != ["NULL"] and machines != ["ALL"]:                
+                for machine, kpi in product(machines,kpis):
+                    new_dict=obj.copy()
+                    new_dict["Machine_Name"]=machine
+                    new_dict["KPI_Name"] = kpi
+                    json_out.append(new_dict)
+            elif machines == ["ALL"]:
+                error.append(self.ERROR_ALL_MACHINES)
+                continue
+            else:
+                # machines == ["NULL"]
+                error.append(self.ERROR_NO_MACHINES)
+                continue
+  
+        return json_out, error
+
 
     def query_generation(self,input= "predict idle time max, cost wrking sum and good cycles min for last week for all the medium capacity cutting machine, predict the same kpis for Laser welding machines 2 for today. calculate the cnsumption_min for next 4 month and for Laser cutter the offline time sum for last 23 day. "
 , label="kpi_calc"):
@@ -354,105 +468,60 @@ class QueryGenerator:
 
         Arguments:
             - input (str): The user input
-            - label (str): The user input classification label, either "kpi_calc" or "predictions" or "report".
+            - label (str): The user input classification label, either "kpi_calc", "predictions", "report" or "what_if".
 
         Returns:
             - A tuple containing two elements:
                 1. If the label is 'report', a list with two dictionaries representing the json parsed results based on the user input.
                 2. If the label is 'kpi_calc' or 'predictions', a single dictionary representing the json parsed result based on the user input.
         """
-
+        # we should make input as a raw data readable string,doing that % are read as a char and not as a placeholder or something else
+        input=r""+input
         self._kb_update()
-        YESTERDAY = f"{(self.TODAY-relativedelta(days=1)).strftime('%Y-%m-%d')} -> {(self.TODAY-relativedelta(days=1)).strftime('%Y-%m-%d')}"
-        query= f"""
-            USER QUERY: {input}
-
-            INSTRUCTIONS:
-            TODAY is {self.TODAY}.
-            Extract information from the USER QUERY based on the following rules and output it in the EXAMPLE OUTPUT specified format.
-            All dates in the USER QUERY are in the format DD/MM/YYYY. When providing your OUTPUT, always convert all dates to the format YYYY-MM-DD. If a date range is given, maintain the range format (e.g., "01/12/2024 -> 10/12/2024" should become "2024-12-01 -> 2024-12-10").
-
-            LIST_1 (list of machines): '{self.machine_res}'
-            LIST_2 (list of kpis): '{self.kpi_res}'
-
-            RULES:
-            1. Match IDs:
-                -Look for any terms in the query that match IDs from LIST_1 or LIST_2.
-                -If a match contains a machine type without a specific number, return all machines of that type. Example: 'Testing Machine' -> ['Testing Machine 1', 'Testing Machine 2', 'Testing Machine 3'].
-                -If no IDs from LIST_2 are associated with the matched KPIs, return ['NULL'] as [matched LIST_2 IDs].
-                -If no IDs from LIST_1 are associated with the matched machines, return ['NULL'] as [matched LIST_1 IDs].
-                -If 'all' IDs from LIST_2 are associated with the matched KPIs, return ['ALL'] as [matched LIST_2 IDs]. Example: 'predict all kpis for ...' -> ['ALL']
-                -If 'all' IDs from LIST_1 are associated with the matched machines, return ['ALL'] as [matched LIST_1 IDs]. Example: 'calculate for all machines ...' -> ['ALL']
-            2. Determine Time Window:
-                -if there is a time window described by exact dates, use them, otherwise return the expression which individuates the time window: 'last/next X days/weeks/months' using the format <last/next, X, days/weeks/months>
-                -If no time window is specified, use NULL.
-                -if there is a reference to an exact month and a year, return the time windows starting from the first of that month and ending to the last day of that month.
-                -Yesterday must be returned as {YESTERDAY}, today as {(self.TODAY).strftime('%Y-%m-%d')} -> {(self.TODAY).strftime('%Y-%m-%d')} and tomorrow as {(self.TODAY+relativedelta(days=1)).strftime('%Y-%m-%d')} -> {(self.TODAY+relativedelta(days=1)).strftime('%Y-%m-%d')}.
-                -Allow for minor spelling or formatting mistakes in the matched expressions and correct them as done in the examples below.
-            3. Handle Errors:
-                -Allow for minor spelling or formatting mistakes in the input.
-                -If there is ambiguity matching a kpi, you can match USER QUERY with the one in LIST_2 which ends with '_avg'"""
-        # There is a different output format between report and (kpi_calc and predictions) use cases so there will be a different prompt
-        # kpi_cal and predictions prompt
-        if label == "kpi_calc" or label == "predictions":
-            query+=f"""
-            4. Output Format:
-                -For each unique combination of machine IDs and KPIs, return a tuple in this format: ([matched LIST_1 IDs], [matched LIST_2 IDs], time window), exact dates are in the format 'YYYY-MM-DD -> YYYY-MM-DD'.
-                
-            NOTES:
-            -Ensure output matches the one of the EXAMPLES below exactly, I need only the OUTPUT section.
-
-            EXAMPLES:
-            '
-            INPUT: Calculate the kpi cost_idle arg and cost idle std for the assembly machine 1 and Low capacity cutting machine for the past 5 day, calculate offlinetime med for Assembly machine 3 for the last two months and cost_idle_avg for Assembly machine. How much do the Assembly machine 2 has worked the last three days? Can you calculate all kpis for 20/11/2024 -> 18/11/2024 for Low Capacity Cutting Machine 1?
-            OUTPUT: (['Assembly Machine 1', 'Low Capacity Cutting Machine 1'], ['cost_idle_avg', 'cost_idle_std'], <last, 5, days>), (['Assembly Machine 3'], ['offline_time_med'], <last, 2, months>), (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['cost_idle_avg'], NULL), (['Assembly Machine 2'], ['working_time_sum'], <last, 3, days>), (['Low Capacity Cutting Machine 1'], ['ALL'], 2024-11-20 -> 2024-11-18)
-
-            INPUT: Calculate using data from the last 2 weeks the standard deviation for cost_idle of Low capacity cutting machine 1 and Assemby Machine 2. Calculate for the same machines also the offline time median using data from the past month. Calculate the highest offline time for low capacity cutting machine 1?
-            OUTPUT: (['Low Capacity Cutting Machine 1', 'Assembly Machine 2'], ['cost_idle_std'], <last, 2, weeks>), (['Low Capacity Cutting Machine 1', 'Assembly Machine 2'], ['offline_time_med'], <last, 1, months>), (['Low Capacity Cutting Machine 1'], ['offline_time_max'], NULL)
-
-            INPUT: Calculate the offline time median about laste 3 weeks. Can you calculate the working time for Assembly machine 1 based on yesterday data, the same kpi dor Assembly machine 2 based on data from 03/05/2024 -> 07/06/2024. What is the day riveting machine 1 had the lowest working time last 2 months.
-            OUTPUT: (['NULL'], ['offline_time_med'], <last, 3, weeks>), (['Assembly Machine 1'], ['working_time_avg'], {YESTERDAY}), (['Assembly Machine 2'], ['working_time_avg'], 2024-05-03 -> 2024-06-07), (['Riveting Machine'], ['working_time_min'], <last, 2, months>)
-
-            INPUT: Predict working time min and the average for Assembly machine for {(self.TODAY + relativedelta(days=5)).strftime('%d/%m/%Y')} -> {(self.TODAY + relativedelta(days=13)).strftime('%d/%m/%Y')} and the same kpis for all machines. What will be the the total amount of working time for low capacity cutting machine 1 and assembly machine 1 for next 5 weeks.
-            OUTPUT: (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['working_time_min','working_time_avg'], {(self.TODAY + relativedelta(days=5)).strftime('%Y-%m-%d')} -> {(self.TODAY + relativedelta(days=13)).strftime('%Y-%m-%d')}), (['ALL'], ['working_time_min','working_time_avg'], NULL), (['Low Capacity Cutting Machine 1', 'Assembly Machine 1'], ['working_time_sum'], <next, 5, weeks>)
-
-            INPUT: Can you predict for next 2 days for Riveting machine 1? predict for all the assembly machine the cost idle average and the sum of working time for the next 3 weeks and for low capacity cutting machne the cost_idle_std for March 2025. predict also for Assembly machine 1 the cost_idle for the next two days.
-            OUTPUT: (['Riveting Machine'], ['NULL'], <next, 2, days>), (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['cost_idle_avg', 'working_time_sum'], <next, 3, weeks>), (['Low Capacity Cutting Machine 1'], ['cost_idle_std'], 2025-03-01 -> 2025-03-31), (['Assembly Machine 1'], ['cost_idle_avg'], <next, 2, days>)
-            '
-            """
+        YESTERDAY_TW = f"{(self.TODAY-relativedelta(days=1)).strftime('%Y-%m-%d')} -> {(self.TODAY-relativedelta(days=1)).strftime('%Y-%m-%d')}"
+        label_handler = {
+            "kpi_calc": self.calc_pred_prompt,
+            "predictions": self.calc_pred_prompt,
+            "report": self.report_prompt,
+            "what_if": self.what_if_prompt
+        }
+        query=label_handler[label]
+        if label in ["kpi_calc", "predictions", "report"]:
+            TODAY_TW =f"{(self.TODAY).strftime('%Y-%m-%d')} -> {(self.TODAY).strftime('%Y-%m-%d')}"
+            TOMORROW_TW=f"{(self.TODAY+relativedelta(days=1)).strftime('%Y-%m-%d')} -> {(self.TODAY+relativedelta(days=1)).strftime('%Y-%m-%d')}"
+            TW1 = f"{(self.TODAY + relativedelta(days=5)).strftime('%d/%m/%Y')} -> {(self.TODAY + relativedelta(days=13)).strftime('%d/%m/%Y')}"
+            TW2 = f"{(self.TODAY + relativedelta(days=5)).strftime('%Y-%m-%d')} -> {(self.TODAY + relativedelta(days=13)).strftime('%Y-%m-%d')}"
+            query= query.format(
+                _INPUT_ = input,
+                _TODAY_ = self.TODAY,
+                _MACHINES_ = self.machine_res,
+                _KPIS_ = self.kpi_res,
+                _TODAY_TW_ = TODAY_TW,
+                _TOMORROW_TW_ = TOMORROW_TW,
+                _YESTERDAY_TW_= YESTERDAY_TW,
+                _TW1_= TW1,
+                _TW2_ = TW2
+                )
         else:
-            query+=f"""
-            4. Output Format:
-                -For each unique combination of machine IDs and KPIs, return a tuple in this format: ([matched LIST_1 IDs], [matched LIST_2 IDs], <time window_prediction, time window_calculation>), exact dates are in the format 'YYYY-MM-DD -> YYYY-MM-DD'.
-                -time window_prediction is the time window related to the prediction part of the report.
-                -time window_calculation is the time window related to the calculation part of the report.
-            NOTES:
-            -Ensure output matches the one of the EXAMPLES below exactly, I need only the OUTPUT section.
-
-            EXAMPLES:
-            '
-            INPUT: generate a report about the kpi cost_idle arg and cost idle std for the assembly machine 1 and Low capacity cutting machine for the past 5 day and the next 10 days, makes also a report about calculate offlinetime med for Assembly machine 3 using data from the last two months and predictiong the next 3 weeks. Can you make a report of all kpis for 20/11/2024 -> 18/11/2024 and predicting next month for Low Capacity Cutting Machine 1?
-            OUTPUT: (['Assembly Machine 1', 'Low Capacity Cutting Machine 1'], ['cost_idle_avg', 'cost_idle_std'], <<last, 5, days>; <next, 10, days>>), (['Assembly Machine 3'], ['offline_time_med'], <<last, 2, months>; <next, 3, weeks>>), (['Low Capacity Cutting Machine 1'], ['ALL'], <2024-11-20 -> 2024-11-18; <next, 1, months>>)
-
-            INPUT: Calculate a report for the last 2 weeks including the standard deviation and the avreage of the cost_idle for Low capacity cutting machine 1 and Assemby Machine 2. Calculate for the same machines also a report about the offline time median. generate a report about the highest offline time for low capacity cutting machine 1?
-            OUTPUT: (['Low Capacity Cutting Machine 1', 'Assembly Machine 2'], ['cost_idle_std', 'cost_idle_avg'], <<last, 2, weeks>; NULL>), (['Low Capacity Cutting Machine 1', 'Assembly Machine 2'], ['offline_time_med'], <NULL; NULL>), (['Low Capacity Cutting Machine 1'], ['offline_time_max'], <NULL; NULL>)
-
-            INPUT: Generate a report including the offline time median about laste 3 weeks and predict next 6 days. Can you generate a report about the working time for Assembly machine 1 predicting next 2 weeks, and a another report about the same kpi dor Assembly machine 2 based on data from 03/05/2024 -> 07/06/2024 and predicting the time window 07/07/2024 -> 09/07/2024.
-            OUTPUT: (['NULL'], ['offline_time_med'], <<last, 3, weeks>; <next, 6, days>>), (['Assembly Machine 1'], ['working_time_avg'], <NULL; <next, 2, weeks>>), (['Assembly Machine 2'], ['working_time_avg'], <2024-05-03 -> 2024-06-07; 2024-07-07 -> 2024-07-09>)
-
-            INPUT: make a report for working time min and average for Riveting machine 1 for {(self.TODAY + relativedelta(days=5)).strftime('%d/%m/%Y')} -> {(self.TODAY + relativedelta(days=13)).strftime('%d/%m/%Y')}. makes for all machines a report about total amount of working time using data from June 2024 and predict the next 5 weeks.
-            OUTPUT: (['Riveting Machine'], ['working_time_min','working_time_avg'], <{(self.TODAY + relativedelta(days=5)).strftime('%Y-%m-%d')} -> {(self.TODAY + relativedelta(days=13)).strftime('%Y-%m-%d')}; NULL>), (['ALL'], ['working_time_sum'], <2024-06-01 -> 2024-06-30; <next, 5, weeks>>)
-
-            INPUT: Can you generate a report predicting the next 2 days for Riveting machine 1? make a report for all the assembly machine including the cost idle average and the sum of working time using data from last 2 months and including a prediction for next 3 weeks. Generate the report for November 2024 low capacity cutting machne using the cost_idle_std, predicting March 2025. 
-            OUTPUT: (['Riveting Machine'], ['NULL'], <NULL; <next, 2, days>>), (['Assembly Machine 1', 'Assembly Machine 2', 'Assembly Machine 3'], ['cost_idle_avg', 'working_time_sum'], <<last, 2, months>; <next, 3, weeks>>), (['Low Capacity Cutting Machine 1'], ['cost_idle_std'], <2024-11-01 -> 2024-11-30; 2025-03-01 -> 2025-03-31>)
-            '
-            """
+            # what_if use case
+            query=query.format(
+                _INPUT_ = input,
+                _TODAY_ = self.TODAY,
+                _MACHINES_ = self.machine_res,
+                _KPIS_ = self.kpi_res,
+                _YESTERDAY_TW_= YESTERDAY_TW,
+                )
 
         data = self.llm.invoke(query)
         data = data.content.strip("\n")
         print(data)
-        
-        if label == "report":
+        if label == "what_if":
+            json_obj, error = self._whatif_json_parser(data)
+            print(f"ERRORS = {error}")
+            print("\n")
+            print(json_obj)
+            return json_obj,error
+        elif label == "report":
             # data needs to be splitted in order to make two _json_parser calls
             data_pred= "OUTPUT: "
             data_kpi_calc= "OUTPUT: "
@@ -473,18 +542,17 @@ class QueryGenerator:
                 data_kpi_calc+=f"({machines}, {kpis}, {tw_kpi_calc}), "
             data_kpi_calc=data_kpi_calc.strip(" ,")
             data_pred = data_pred.strip(" ,")
-            kpi_json_obj, all_kpis = self._json_parser(data_kpi_calc,"kpi_calc")
-            pred_json_obj, all_kpis = self._json_parser(data_pred,"predictions")
+            kpi_json_obj, error = self._json_parser(data_kpi_calc,"kpi_calc")
+            pred_json_obj, error = self._json_parser(data_pred,"predictions")
             print("\n")
             print(kpi_json_obj)
             print(pred_json_obj)
-            return [kpi_json_obj,pred_json_obj], all_kpis
+            return [kpi_json_obj,pred_json_obj], error
         else:
-            # label == "predictions" or label == "kpi_calc"
-            json_obj, all_kpis = self._json_parser(data,label)
+            json_obj, error = self._json_parser(data,label)
             print("\n")
             print(json_obj)
-            return json_obj,all_kpis
+            return json_obj,error
         
         
         

@@ -186,7 +186,6 @@ services:
       - not-db-init
 
   db-init:
-    image: ghcr.io/belgio99/smartfactory/db-init:latest
     build:
       context: ./database
       dockerfile: Dockerfile
@@ -205,7 +204,6 @@ services:
     build:
       context: ./kb
       dockerfile: Dockerfile
-    image: ghcr.io/belgio99/smartfactory/kb:latest
     volumes:
       - kb:/KB/storage
     platform: linux/amd64
@@ -221,7 +219,6 @@ services:
     build:
       context: ./data-processing
       dockerfile: Dockerfile
-    image: ghcr.io/belgio99/smartfactory/data-processing:latest
     ports: 
       - "10030:8000"
     profiles:
@@ -235,7 +232,6 @@ services:
         condition: service_healthy
 
   api:
-    image: ghcr.io/belgio99/smartfactory/api:latest
     build:
       context: ./api
       dockerfile: Dockerfile
@@ -265,7 +261,6 @@ services:
       - not-db-init
     
   rag:
-    image: ghcr.io/belgio99/smartfactory/rag:latest
     build:
       context: ./rag
       dockerfile: Dockerfile
@@ -281,7 +276,6 @@ services:
       - not-db-init
 
   gui-panel:
-    image: ghcr.io/belgio99/smartfactory/gui-panel:latest
     build:
       context: ./gui-panel
       dockerfile: Dockerfile
@@ -294,7 +288,6 @@ services:
       - not-db-init
 
   kpi-engine:
-    image: ghcr.io/belgio99/smartfactory/kpi-engine:latest
     build:
       context: ./kpi-engine
       dockerfile: Dockerfile

@@ -9,3 +9,8 @@ smart_app_data.csv
 *.pyc
 .idea
 models/
+kpi-engine/src/prova.csv
+rag/TODO.txt
+kpi-engine/src/prva.ipynb
+rag/docs/sa_ontology.rdf
+rag/queryGen/prova.py

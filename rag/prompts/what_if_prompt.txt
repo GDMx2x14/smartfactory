@@ -1,0 +1,62 @@
+{_HISTORY_}
+
+USER QUERY: "{_USER_QUERY_}"
+
+INSTRUCTION: 
+In the CONTEXT section, you are provided with contextual information about machines on an industrial factory floor and their associated Key Performance Indicators (KPIs) variation on a past time window.
+The context includes some pairs of computed KPI values, and the output must precisely compare the pair's value for each pair available in the context.
+
+TASK: Based on the provided context, respond to the USER QUERY effectively. For each pair of VALUES within the context:
+1. Compare the first computed KPI value with the second one, using the terms **"improve"** for increases and **"decrease"** for reductions. Do not use synonyms such as "change," "rise," or "fall."
+2. Each sentence of explicit comparison must start bya a NEW LINE **(`<br>`)**, followed by a dash (`-`). Ensure there is no text on the same line after a point ends.
+3. Treat the context as correct without adding unnecessary commentary or phrases like "Here's the response to the query."
+4. Reformulate the data rather than displaying it directly, following STRICTLY the schematic example's ANSWER format.  
+5. Explain errors in KPI computation and output ALWAYS (if the context does not contain a valid answer), the ERROR logs in User input DATA ERRORS.
+
+FORMAT FOR CONTEXT:  
+1. Computed KPI:  
+   - Machine_Name: Name of the machine for which the KPI is reported.  
+   - KPI_name: Unique identifier for the KPI.  
+   - Value: Computed KPI values or an error message if input parameters (e.g., KPI name, machine, time period) are invalid.  
+   - Measure_unit: Unit of measurement for the KPI (e.g., percentage, seconds, units).  
+   - Date_start: Start date of the KPI computation (DD/MM/YYYY). If Date_finish is NULL, it refers to a single day (Date_start).  
+   - Date_finish: End date for aggregated KPI values (NULL if not aggregated).  
+   - Aggregator: Aggregation function used (e.g., MIN, MAX, AVG), or NULL if no aggregation.  
+   - Forecast: Always false for computed KPIs.
+   - Percentage_Difference: percentage difference between the two element of VALUE, usefull for the output
+
+REQUIREMENTS:
+1. Never display raw data directly; always reformulate it in your response.  
+2. Use the terms "improve" for positive variations and "decrease" for negative variations. Avoid synonyms.  
+3. Each sentence must begin with a dash (`-`) and be followed by a line break. Do not place multiple sentences on the same line.
+4. Explain errors in computation clearly and concisely.  
+5. If Value in computed KPI contains an error message, explain why the request has failed using also the ERROR logs in User input DATA ERRORS.
+
+EXAMPLES:
+
+Question: what would be availability and throughput if the working time for laser cutter had been 20%% higher last 2 weeks?
+Context: 
+'
+[{{'Machine_Name': 'Laser Cutter', 'Machine_Type': 'any', 'KPI_Name': 'availability', 'Value': [0.8882412879962243, 0.9051000914045362], 'Measure_Unit': '%%', 'Date_Start': '2024-09-30', 'Date_Finish': '2024-10-13', 'Aggregator': '-', 'Forecast': False, 'Percentage_Difference': '+1.8979981719092986 %%'}}, {{'Machine_Name': 'Laser Cutter', 'Machine_Type': 'any', 'KPI_Name': 'throughput', 'Value': [0.06197583328561075, 0.052626777890331], 'Measure_Unit': ' # per seconds', 'Date_Start': '2024-09-30', 'Date_Finish': '2024-10-13', 'Aggregator': '-', 'Forecast': False, 'Percentage_Difference': '-15.085001523408915 %%'}}]
+User input DATA ERRORS:
+- Error: At least one of the request of the user input does not contain any valid kpi to be changed.
+'
+ANSWER:
+If the working time for Laser Cutter had been 20%% higher last two weeks:
+<br>-The availability would have improved from 0.89%% to 0.91%%, an increase of 1.9%%.
+<br>-The throughput would have decreased from 0.062 #/s to 0.053 #/s, a decrease of 15.1%%.
+
+
+Question: What would be the operative time for testing machine 1 if the working time was different during last 4 days?
+Context:
+'
+[{{"Value": "Error: Request input not valid"}}]
+User input DATA ERRORS:
+- Error: At least one of the user input requests does not contain any valid kpi to be changed.
+'
+ANSWER:
+The user input was not valid, input log errors: 
+<br>-At least one of the user input requests does not contain any valid kpi to be changed.
+
+CONTEXT: 
+{_CONTEXT_}

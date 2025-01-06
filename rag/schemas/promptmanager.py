@@ -31,6 +31,7 @@ class PromptManager:
         self.prompts = {}
         self.load_prompts()
         self.switcher = {
+            "what_if": "what_if_prompt",
             "predictions": "calculation_and_forecasting",
             "kpi_calc": "calculation_and_forecasting",
             "new_kpi": "kpi_generation",

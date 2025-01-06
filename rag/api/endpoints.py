@@ -3,7 +3,7 @@ import json
 import os
 import time
 import nltk
-
+import random
 from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
@@ -125,6 +125,7 @@ def prompt_classifier(input: Question):
         {"text": "Can you describe cost_working_avg?", "label": "kb_q"},
         {"text": "Make a report about bad_cycles_min for Laser Welding Machine 1 with respect to last week", "label": "report"},
         {"text": "Create a dashboard to compare performances for different type of machines", "label": "dashboard"},
+        {"text": "what woud be operative time for last 3 weeks for medium capacity cutting machine 1 if the working time was 10%% higher?", "label": "what_if"},
     ]
 
     example_prompt = PromptTemplate(
@@ -136,7 +137,7 @@ def prompt_classifier(input: Question):
         examples=examples,
         example_prompt=example_prompt,
         prefix= "FEW-SHOT EXAMPLES:",
-        suffix="Task: Classify with one of the labels ['predictions', 'new_kpi', 'report', 'kb_q', 'dashboard','kpi_calc'] the following prompt:\nText: {text_input}\nLabel:",
+        suffix="Task: Classify with one of the labels ['predictions', 'new_kpi', 'report', 'kb_q', 'dashboard','kpi_calc','what_if'] the following prompt:\nText: {text_input}\nLabel:",
         input_variables=["text_input"]
     )
 
@@ -145,20 +146,20 @@ def prompt_classifier(input: Question):
 
     print(f"user input request label = {label}")
 
-    # If the label is kps_calc, report or predictions, it requires the query generator to generate a json_request from the user input
+    # If the label is kps_calc, report, predictions or what_if, it requires the query generator to generate a json_request from the user input
     json_request=""
-    all_kpis=0
-    if label == "predictions" or label == "kpi_calc" or label == "report":
-        json_request, all_kpis = query_gen.query_generation(input, label)
+    error=None
+    if label in ["predictions","kpi_calc","report", "what_if"]:
+        json_request, error = query_gen.query_generation(input.userInput, label)
         
-    return label, json_request, all_kpis
+    return label, json_request, error
 
 async def ask_kpi_engine(json_body):
     """
     Function to query the KPI engine for machine data.
 
     Args:
-        json_body (str): the json used to communicate the request to the KPI engine API.
+        json_body (list of dictionary): the json used to communicate the request to the KPI engine API.
 
     Returns:
         dict: A dictionary containing the success status and the KPI data.
@@ -171,6 +172,7 @@ async def ask_kpi_engine(json_body):
         try:
             response = await client.post(kpi_engine_url,json=json_body,headers=HEADER)
         except Exception as e:
+            print(f"EXCEPTION =============>>>>>>>>>>>>>>>>>>>{str(e)}")
             return {
                     "success": False,
                     "data": [
@@ -180,6 +182,7 @@ async def ask_kpi_engine(json_body):
     if response.status_code == 200:
         return {"success": True, "data": response.json()}  
     else:
+        print(f"ERROR CODE =============>>>>>>>>>>>>>>>>>>>{response.status_code}")
         return {
                     "success": False,
                     "data": [
@@ -337,7 +340,7 @@ async def handle_kpi_calc(json_body):
     the response data, and returns it as a formatted string.
 
     Args:
-        json_body (str): the json used to communicate the request to the KPI engine API.
+        json_body (list of dictionary): the json used to communicate the request to the KPI engine API.
 
     Returns:
         str: A string containing the KPI calculation data in a formatted form.
@@ -370,6 +373,7 @@ async def handle_kb_q(question: Question, llm, graph, history):
     general_qa = GeneralQAChain(llm, graph, history)
     response = general_qa.chain.invoke(question.userInput)
     return response['result']
+
 
 async def translate_answer(question: Question, question_language: str, context):
     """
@@ -416,10 +420,11 @@ async def ask_question(question: Question): # to add or modify the services allo
         print(f"Question Language: {question_language} - Translated Question: {question.userInput}")
 
         # Classify the question
-        label, json_body,all_kpis = prompt_classifier(question)
+        label, json_body, error = prompt_classifier(question)
 
         # Mapping of handlers
         handlers = {
+            'what_if': lambda: handle_kpi_calc(json_body),
             'predictions': lambda: handle_predictions(json_body),
             'new_kpi': lambda: handle_new_kpi(question, llm, graph, history[userId]),
             'report': lambda: handle_report(json_body),
@@ -447,10 +452,11 @@ async def ask_question(question: Question): # to add or modify the services allo
         # Execute the handler
         context = await handlers[label]()
         #eventually add the log error if user tried to ask for all kpis
-        if all_kpis == query_gen.ERROR_NO_KPIS:
-            context+="\nError: You can't calculate/predict for no kpis, try again with at least one kpi.\n"
-        elif all_kpis == query_gen.ERROR_ALL_KPIS:
-            context+="\nError: You can't calculate/predict for all kpis, try again with less kpis.\n"
+        if error != []:
+            context+="\nUser input DATA ERRORS:\n"
+            for err in error:
+                context+=f"- {err}\n"
+        print(f"\n\nCONTEXT (post kpi-calc) = {context}")
         if label == 'kb_q':
             # Update the history
             history[userId].append({'question': question.userInput.replace('{','{{').replace('}','}}'), 'answer': context.replace('{','{{').replace('}','}}')})
@@ -463,7 +469,7 @@ async def ask_question(question: Question): # to add or modify the services allo
             return Answer(textResponse=context, textExplanation='', data='', label=label)
 
         # Generate the prompt and invoke the LLM for certain labels
-        if label in ['predictions', 'new_kpi', 'report', 'kpi_calc', 'dashboard']:
+        if label in ['predictions', 'new_kpi', 'report', 'kpi_calc', 'dashboard', 'what_if']:
             # Prepare the history context from previous chat
             history_context = "CONVERSATION HISTORY:\n" + "\n\n".join(
                 [f"Q: {entry['question']}\nA: {entry['answer']}" for entry in history[userId]]
@@ -474,7 +480,6 @@ async def ask_question(question: Question): # to add or modify the services allo
                 _USER_QUERY_=question.userInput,
                 _CONTEXT_=context
             )
-            
             # Initialize a thread pool executor for asynchronous task execution
             executor = ThreadPoolExecutor()
 
@@ -482,11 +487,11 @@ async def ask_question(question: Question): # to add or modify the services allo
             future = executor.submit(llm.invoke, prompt)
 
             # Check the label type and perform operations accordingly
-            if label == 'predictions':
+            if label in 'predictions':
                 # Add the context to the explainer for predictions under the "Predictor" key
                 explainer.add_to_context([("Predictor", "[" + context + "]")])
 
-            if label == 'kpi_calc':
+            if label == 'kpi_calc'or label == 'what_if':
                 # Add the context to the explainer for KPI calculations under the "KPI Engine" key
                 explainer.add_to_context([("KPI Engine", "[" + context + "]")])
 
@@ -517,11 +522,11 @@ async def ask_question(question: Question): # to add or modify the services allo
 
             # Wait for the asynchronous task result (llm.invoke) to complete and store the result
             llm_result = future.result()
-
+            print(f"\n\nANSWER (answer from last question (final answer)) = {llm_result.content}")
             # Shutdown the executor without waiting for all threads to complete (graceful exit)
             executor.shutdown(wait=False)
             
-            if label in ['predictions', 'report', 'kpi_calc']:
+            if label in ['predictions', 'report', 'kpi_calc', 'what_if']:
                 # Update the history
                 history[userId].append({'question': question.userInput.replace('{','{{').replace('}','}}'), 'answer': llm_result.content.replace('{','{{').replace('}','}}')})
 
@@ -537,7 +542,7 @@ async def ask_question(question: Question): # to add or modify the services allo
                 return Answer(textResponse=textResponse, textExplanation=textExplanation, data='', label=label)
 
             # Handle the 'kpi_calc' label
-            if label == 'kpi_calc':
+            if label == 'kpi_calc'or label== 'what_if':
                 # Attribute the LLM result content to the context using the explainer
                 textResponse, textExplanation, _ = explainer.attribute_response_to_context(llm_result.content)
                 # Return the formatted response as an Answer object
@@ -599,4 +604,5 @@ async def ask_question(question: Question): # to add or modify the services allo
                 data = json.dumps(response_json["bindings"], indent=2)
                 return Answer(textResponse=textResponse, textExplanation=textExplanation, data=data, label=label)
     except Exception as e:
+        print(f"EXCEPTION = {str(e)}")
         return Answer(textResponse="Something gone wrong, I'm not able to answer your question", textExplanation="", data="", label="Error")

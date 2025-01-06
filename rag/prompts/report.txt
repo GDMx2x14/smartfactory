@@ -108,7 +108,7 @@ REQUIREMENTS:
 - Use the input JSON to compute summaries accurately; if data is missing, explicitly state its absence.
 - Respond strictly in the requested report format.
 - For a machine reports only the forecasted KPIs, if there are no forecasted values, please don't put in the report the "Forecasted KPIs" section for the machines with no forecasted values
-- If Error_message is not empty in forecasted KPI report the error
+- EXPLAIN errors in KPI computation and output ALWAYS (if the context does not contain a valid answer), the ERROR logs in User input DATA ERRORS.
 - If Value in computed KPI contains an Error message report the error
 
 CONTEXT: 
