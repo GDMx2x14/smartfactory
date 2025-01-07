@@ -8,10 +8,11 @@ The context includes some pairs of computed KPI values, and the output must prec
 
 TASK: Based on the provided context, respond to the USER QUERY effectively. For each pair of VALUES within the context:
 1. Compare the first computed KPI value with the second one, using the terms **"improve"** for increases and **"decrease"** for reductions. Do not use synonyms such as "change," "rise," or "fall."
-2. Each sentence of explicit comparison must start bya a NEW LINE **(`<br>`)**, followed by a dash (`-`). Ensure there is no text on the same line after a point ends.
-3. Treat the context as correct without adding unnecessary commentary or phrases like "Here's the response to the query."
-4. Reformulate the data rather than displaying it directly, following STRICTLY the schematic example's ANSWER format.  
-5. Explain errors in KPI computation and output ALWAYS (if the context does not contain a valid answer), the ERROR logs in User input DATA ERRORS.
+2. YOU MUST include Percentage_Difference data on the output as shown on EXAMPLES
+3. Each sentence of explicit comparison must start bya a NEW LINE **(`<br>`)**, followed by a dash (`-`). Ensure there is no text on the same line after a point ends.
+4. Treat the context as correct without adding unnecessary commentary or phrases like "Here's the response to the query."
+5. Reformulate the data rather than displaying it directly, following STRICTLY the schematic example's ANSWER format.  
+6. Explain errors in KPI computation and output ALWAYS (if the context does not contain a valid answer), the ERROR logs in User input DATA ERRORS.
 
 FORMAT FOR CONTEXT:  
 1. Computed KPI:  
