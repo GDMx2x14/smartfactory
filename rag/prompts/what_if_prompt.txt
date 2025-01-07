@@ -58,5 +58,8 @@ ANSWER:
 The user input was not valid, input log errors: 
 <br>-At least one of the user input requests does not contain any valid kpi to be changed.
 
+P.S:
+DO NOT repeat exactly _USER_QUERY_ at the start of the ANSWER
+
 CONTEXT: 
 {_CONTEXT_}
