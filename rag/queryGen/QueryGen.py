@@ -512,7 +512,7 @@ class QueryGenerator:
                 _YESTERDAY_TW_= YESTERDAY_TW,
                 )
 
-        data = await self.llm.invoke(query)
+        data = self.llm.invoke(query)
         data = data.content.strip("\n")
         print(data)
         if label == "what_if":

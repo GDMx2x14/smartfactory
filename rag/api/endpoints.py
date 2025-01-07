@@ -142,7 +142,8 @@ async def prompt_classifier(input: Question):
     )
 
     prompt = few_shot_prompt.format(text_input=input.userInput)
-    label = await llm.invoke(prompt).content.strip("\n")
+    label = llm.invoke(prompt)
+    label=label.content.strip("\n")
 
     print(f"user input request label = {label}")
 
