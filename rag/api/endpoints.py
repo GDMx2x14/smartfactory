@@ -107,7 +107,7 @@ prompt_manager = PromptManager('prompts/')
 query_gen = QueryGenerator(llm)
 
 
-def prompt_classifier(input: Question):
+async def prompt_classifier(input: Question):
     """
     Classifies an input prompt into a predefined category and generate if needed a json query to make requests to kpi engine and predictor.
     
@@ -142,7 +142,7 @@ def prompt_classifier(input: Question):
     )
 
     prompt = few_shot_prompt.format(text_input=input.userInput)
-    label = llm.invoke(prompt).content.strip("\n")
+    label = await llm.invoke(prompt).content.strip("\n")
 
     print(f"user input request label = {label}")
 
@@ -150,7 +150,7 @@ def prompt_classifier(input: Question):
     json_request=""
     error=None
     if label in ["predictions","kpi_calc","report", "what_if"]:
-        json_request, error = query_gen.query_generation(input.userInput, label)
+        json_request, error = await query_gen.query_generation(input.userInput, label)
         
     return label, json_request, error
 
@@ -420,7 +420,7 @@ async def ask_question(question: Question): # to add or modify the services allo
         print(f"Question Language: {question_language} - Translated Question: {question.userInput}")
 
         # Classify the question
-        label, json_body, error = prompt_classifier(question)
+        label, json_body, error = await prompt_classifier(question)
 
         # Mapping of handlers
         handlers = {

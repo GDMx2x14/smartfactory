@@ -458,7 +458,7 @@ class QueryGenerator:
         return json_out, error
 
 
-    def query_generation(self,input= "predict idle time max, cost wrking sum and good cycles min for last week for all the medium capacity cutting machine, predict the same kpis for Laser welding machines 2 for today. calculate the cnsumption_min for next 4 month and for Laser cutter the offline time sum for last 23 day. "
+    async def query_generation(self,input= "predict idle time max, cost wrking sum and good cycles min for last week for all the medium capacity cutting machine, predict the same kpis for Laser welding machines 2 for today. calculate the cnsumption_min for next 4 month and for Laser cutter the offline time sum for last 23 day. "
 , label="kpi_calc"):
         """
         Generates a json query for calculating and predicting KPIs for machines based on user input.
@@ -512,7 +512,7 @@ class QueryGenerator:
                 _YESTERDAY_TW_= YESTERDAY_TW,
                 )
 
-        data = self.llm.invoke(query)
+        data = await self.llm.invoke(query)
         data = data.content.strip("\n")
         print(data)
         if label == "what_if":
